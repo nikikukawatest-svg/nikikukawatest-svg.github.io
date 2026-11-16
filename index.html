@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>BINGO ROULETTE - パーティー抽選機</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for Sound Effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: radial-gradient(circle at top, #1e1b4b 0%, #0f172a 100%);
+            height: 100vh;
+            height: 100dvh;
+            padding-top: max(0.35rem, env(safe-area-inset-top));
+            padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+            padding-left: max(0.5rem, env(safe-area-inset-left));
+            padding-right: max(0.5rem, env(safe-area-inset-right));
+            color: #ffffff;
+            overflow: hidden;
+        }
+        .font-number {
+            font-family: 'Montserrat', sans-serif;
+        }
+        #confetti-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 40;
+        }
+        .roulette-ring {
+            box-shadow: 0 0 30px rgba(251, 191, 36, 0.25), inset 0 0 20px rgba(0, 0, 0, 0.6);
+        }
+        @keyframes popWin {
+            0% { transform: scale(0.8); }
+            50% { transform: scale(1.12); }
+            100% { transform: scale(1); }
+        }
+        .animate-pop-win {
+            animation: popWin 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-between gap-1.5 select-none">
+
+    <!-- 紙吹雪演出用キャンバス -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- ヘッダー（Googleサイト埋め込み対応・超スリム1行設計） -->
+    <header class="max-w-6xl w-full mx-auto shrink-0 flex items-center justify-between gap-2 pb-1 border-b border-white/10">
+        <div class="flex items-center gap-1.5 min-w-0">
+            <div class="w-6 h-6 shrink-0 rounded-md bg-gradient-to-br from-amber-400 to-orange-600 flex items-center justify-center shadow-sm">
+                <span class="font-number font-black text-sm text-slate-900">B</span>
+            </div>
+            <h1 class="text-xs sm:text-base font-black tracking-wider bg-clip-text text-transparent bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500 truncate">
+                BINGO ROULETTE
+            </h1>
+        </div>
+
+        <div class="flex items-center gap-1 shrink-0">
+            <!-- 全画面切り替えボタン -->
+            <button id="fullscreen-toggle" class="px-2 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-[11px] font-bold flex items-center gap-1 transition active:scale-95" title="全画面表示の切り替え">
+                <svg id="fullscreen-icon-enter" class="w-3 h-3 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+                <svg id="fullscreen-icon-exit" class="w-3 h-3 text-amber-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4H4m0 0l5 5M15 9V4h5m0 0l-5 5M9 15v5H4m0 0l5-5m6 5v-5h5m0 0l-5-5"></path></svg>
+                <span id="fullscreen-label">全画面</span>
+            </button>
+
+            <!-- 音声オン・オフボタン -->
+            <button id="sound-toggle" class="px-2 py-1 rounded-md bg-slate-800/80 hover:bg-slate-700 border border-white/10 text-[11px] font-bold flex items-center gap-1 transition active:scale-95" title="効果音の切り替え">
+                <span id="sound-icon" class="text-[11px]">🔊</span>
+                <span class="hidden sm:inline" id="sound-label">効果音 ON</span>
+            </button>
+
+            <!-- リセットボタン -->
+            <button id="reset-btn" class="px-2 py-1 rounded-md bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/30 text-rose-200 text-[11px] font-bold flex items-center gap-1 transition active:scale-95">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                <span class="hidden sm:inline">リセット</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ（画面の高さ全体を使って引き伸ばし） -->
+    <main class="max-w-6xl w-full mx-auto flex-1 min-h-0 flex flex-col">
+        
+        <!-- ① 履歴一覧画面 -->
+        <section id="history-screen" class="w-full h-full flex flex-col gap-2">
+            <!-- 上部コントロール＆ステータスバー -->
+            <div class="shrink-0 bg-slate-900/70 backdrop-blur-md border border-white/10 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 shadow-lg flex flex-wrap md:flex-nowrap items-center justify-between gap-2">
+                <div class="flex items-center gap-3 sm:gap-4">
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-[10px] text-slate-400">抽選済</span>
+                        <span class="font-number font-black text-base sm:text-xl text-amber-400 leading-none"><span id="drawn-count">0</span><span class="text-[11px] text-slate-500">/75</span></span>
+                    </div>
+                    <div class="h-4 w-px bg-white/10"></div>
+                    <div class="flex items-baseline gap-1.5">
+                        <span class="text-[10px] text-slate-400">残り</span>
+                        <span id="remaining-count" class="font-number font-black text-base sm:text-xl text-emerald-400 leading-none">75</span>
+                    </div>
+                </div>
+
+                <!-- 直近の履歴（最大5件・高さ拡大） -->
+                <div class="flex items-center gap-2 overflow-hidden py-0.5">
+                    <span class="text-xs text-slate-400 font-bold shrink-0 hidden sm:inline">直近:</span>
+                    <div id="recent-history" class="flex items-center gap-2 px-1 py-1 min-h-[42px] sm:min-h-[46px]">
+                        <span class="text-xs text-slate-500">まだ抽選されていません</span>
+                    </div>
+                </div>
+
+                <!-- 抽選開始ボタン -->
+                <button id="spin-btn" class="w-full md:w-auto px-5 py-2 rounded-lg font-black text-sm sm:text-base tracking-wider shadow-md transition-all transform active:scale-95 bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 border-b-2 border-orange-700">
+                    抽選開始！
+                </button>
+            </div>
+
+            <!-- 1〜75 当選番号一覧ボード（画面下端まで自動拡大） -->
+            <div class="flex-1 min-h-0 bg-slate-900/60 backdrop-blur-md border border-white/10 rounded-xl p-2 sm:p-3 shadow-lg flex flex-col">
+                <div class="grid grid-cols-5 gap-1.5 sm:gap-2.5 flex-1 min-h-0" id="bingo-board">
+                    <!-- JavaScriptで動的に生成されます -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ②＆③ ルーレット抽選・確定画面（全画面フォーカス表示） -->
+        <section id="roulette-screen" class="hidden w-full h-full flex flex-col items-center justify-center">
+            <div class="bg-slate-900/80 backdrop-blur-xl border border-white/15 rounded-2xl px-3 py-2 sm:px-6 sm:py-3 shadow-2xl flex flex-col items-center justify-between max-w-4xl w-full h-full max-h-full text-center">
+                
+                <!-- ステータスラベル -->
+                <div id="roulette-status-badge" class="shrink-0 px-4 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs sm:text-sm tracking-widest animate-pulse">
+                    抽選中...
+                </div>
+
+                <!-- 2重円ルーレットディスプレイ（外周：10の位 / 内周：1の位） -->
+                <div class="relative flex-1 min-h-0 w-full flex items-center justify-center my-1 overflow-hidden">
+                    <div id="wheel-wrapper" class="relative aspect-square h-full max-h-[85vh] max-w-full rounded-full p-2 bg-gradient-to-tr from-amber-500/30 via-purple-500/30 to-amber-300/30 roulette-ring flex items-center justify-center">
+                        <!-- 上部固定インジケーター針（▼） -->
+                        <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 z-20 drop-shadow-[0_4px_6px_rgba(0,0,0,0.8)]">
+                            <svg class="w-9 h-9 sm:w-11 sm:h-11 text-amber-400" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 21L3 6h18L12 21z"/>
+                            </svg>
+                        </div>
+
+                        <!-- 2重円ホイール描画用キャンバス -->
+                        <canvas id="wheel-canvas" class="rounded-full"></canvas>
+
+                        <!-- 中央コア（BINGO列と確定数字表示） -->
+                        <div id="ball-display" class="absolute w-[31%] h-[31%] rounded-full bg-gradient-to-b from-slate-800 to-slate-950 border-2 sm:border-4 border-amber-400/80 shadow-[0_0_28px_rgba(0,0,0,0.95)] flex flex-col items-center justify-center z-10 pointer-events-none">
+                            <!-- BINGO 列アルファベット表示 -->
+                            <span id="bingo-letter" class="font-number font-black text-base sm:text-2xl tracking-widest text-amber-400 leading-none">
+                                ?
+                            </span>
+                            <!-- 確定数字 / 段階表示 -->
+                            <div id="main-number" class="font-number font-black text-4xl sm:text-6xl md:text-7xl tracking-tighter text-white mt-0.5 leading-none">
+                                --
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 凡例ガイド＆確定後の案内メッセージ -->
+                <div class="shrink-0 flex flex-col items-center">
+                    <div class="flex items-center justify-center gap-4 text-[11px] sm:text-xs text-slate-400">
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span>外側：10の位</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span>内側：1の位</span>
+                    </div>
+                    <p id="return-notice" class="text-xs text-amber-300 font-bold mt-1 h-4 transition-opacity duration-300 opacity-0">
+                        まもなく一覧画面に戻ります...
+                    </p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- カスタム確認モーダル（alert/confirm代替） -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-white/15 rounded-3xl max-w-sm w-full p-6 shadow-2xl text-center transform transition-all">
+            <div class="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-4 text-2xl">
+                ⚠️
+            </div>
+            <h3 class="text-lg font-bold text-white mb-2">ゲームをリセットしますか？</h3>
+            <p class="text-sm text-slate-400 mb-6">これまでの抽選履歴とボードの記録がすべて消去されます。</p>
+            <div class="flex gap-3">
+                <button id="cancel-reset" class="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition">
+                    キャンセル
+                </button>
+                <button id="confirm-reset" class="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold shadow-lg transition">
+                    リセットする
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- アプリケーションロジック -->
+    <script>
+        /**
+         * ビンゴゲーム用ルーレット アプリケーション
+         * フロー：1.履歴一覧画面 -> (開始) -> 2.ルーレット画面(約4.8秒: 10の位停止後3秒回転して1の位確定) -> 3.ルーレット確定(3秒) -> 1へ戻る
+         */
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- 状態管理 ---
+            const MAX_NUMBER = 75;
+            let availableNumbers = [];
+            let drawnHistory = [];
+            let isSpinning = false;
+            let spinAnimFrame = null;
+            let returnTimeout = null;
+            let isSoundEnabled = true;
+            let audioInitialized = false;
+
+            // 2重円ルーレットの回転角度管理
+            let outerAngle = 0; // 外周：10の位 (0〜7の8分割)
+            let innerAngle = 0; // 内周：1の位 (0〜9の10分割)
+
+            // --- DOM要素の取得 ---
+            const historyScreenEl = document.getElementById('history-screen');
+            const rouletteScreenEl = document.getElementById('roulette-screen');
+            const rouletteStatusBadgeEl = document.getElementById('roulette-status-badge');
+            const returnNoticeEl = document.getElementById('return-notice');
+            const wheelCanvas = document.getElementById('wheel-canvas');
+            const wheelCtx = wheelCanvas.getContext('2d');
+
+            const spinBtn = document.getElementById('spin-btn');
+            const mainNumberEl = document.getElementById('main-number');
+            const bingoLetterEl = document.getElementById('bingo-letter');
+            const ballDisplayEl = document.getElementById('ball-display');
+            const drawnCountEl = document.getElementById('drawn-count');
+            const remainingCountEl = document.getElementById('remaining-count');
+            const recentHistoryEl = document.getElementById('recent-history');
+            const bingoBoardEl = document.getElementById('bingo-board');
+            const soundToggleBtn = document.getElementById('sound-toggle');
+            const soundIconEl = document.getElementById('sound-icon');
+            const soundLabelEl = document.getElementById('sound-label');
+            const fullscreenToggleBtn = document.getElementById('fullscreen-toggle');
+            const fullscreenIconEnter = document.getElementById('fullscreen-icon-enter');
+            const fullscreenIconExit = document.getElementById('fullscreen-icon-exit');
+            const fullscreenLabelEl = document.getElementById('fullscreen-label');
+            const resetBtn = document.getElementById('reset-btn');
+            const confirmModal = document.getElementById('confirm-modal');
+            const cancelResetBtn = document.getElementById('cancel-reset');
+            const confirmResetBtn = document.getElementById('confirm-reset');
+
+            // --- 効果音設定 (Tone.js) ---
+            let tickSynth = null;
+            let winSynth = null;
+
+            function initAudio() {
+                if (audioInitialized) return;
+                try {
+                    if (typeof Tone !== 'undefined') {
+                        Tone.start();
+                        tickSynth = new Tone.MembraneSynth({
+                            pitchDecay: 0.01,
+                            octaves: 2,
+                            envelope: { attack: 0.001, decay: 0.05, sustain: 0 }
+                        }).toDestination();
+                        tickSynth.volume.value = -12;
+
+                        winSynth = new Tone.PolySynth(Tone.Synth, {
+                            oscillator: { type: 'triangle' },
+                            envelope: { attack: 0.02, decay: 0.3, sustain: 0.2, release: 0.8 }
+                        }).toDestination();
+                        winSynth.volume.value = -6;
+                        audioInitialized = true;
+                    }
+                } catch (e) {
+                    console.warn('Audio initialization skipped:', e);
+                }
+            }
+
+            function playTickSound(pitch = 'C5') {
+                if (!isSoundEnabled || !tickSynth) return;
+                try {
+                    tickSynth.triggerAttackRelease(pitch, '32n');
+                } catch (e) {}
+            }
+
+            function playLockSound() {
+                if (!isSoundEnabled || !winSynth) return;
+                try {
+                    winSynth.triggerAttackRelease(['G5', 'D6'], '16n');
+                } catch (e) {}
+            }
+
+            function playWinSound() {
+                if (!isSoundEnabled || !winSynth) return;
+                try {
+                    const now = Tone.now();
+                    winSynth.triggerAttackRelease(['C5', 'E5', 'G5'], '8n', now);
+                    winSynth.triggerAttackRelease(['C5', 'E5', 'G5', 'C6'], '2n', now + 0.12);
+                } catch (e) {}
+            }
+
+            // --- ユーティリティ関数 ---
+            function getBingoColumnInfo(num) {
+                if (num <= 15) return { letter: 'B', color: 'text-sky-400', bg: 'bg-sky-500', border: 'border-sky-400' };
+                if (num <= 30) return { letter: 'I', color: 'text-rose-400', bg: 'bg-rose-500', border: 'border-rose-400' };
+                if (num <= 45) return { letter: 'N', color: 'text-amber-400', bg: 'bg-amber-500', border: 'border-amber-400' };
+                if (num <= 60) return { letter: 'G', color: 'text-emerald-400', bg: 'bg-emerald-500', border: 'border-emerald-400' };
+                return { letter: 'O', color: 'text-purple-400', bg: 'bg-purple-500', border: 'border-purple-400' };
+            }
+
+            // --- ボード初期化・描画 ---
+            function buildBoard() {
+                bingoBoardEl.innerHTML = '';
+                const columns = [
+                    { letter: 'B', start: 1, end: 15, headerBg: 'from-sky-500 to-blue-600' },
+                    { letter: 'I', start: 16, end: 30, headerBg: 'from-rose-500 to-red-600' },
+                    { letter: 'N', start: 31, end: 45, headerBg: 'from-amber-400 to-orange-500 text-slate-950' },
+                    { letter: 'G', start: 46, end: 60, headerBg: 'from-emerald-500 to-teal-600' },
+                    { letter: 'O', start: 61, end: 75, headerBg: 'from-purple-500 to-indigo-600' }
+                ];
+
+                columns.forEach(col => {
+                    const colDiv = document.createElement('div');
+                    colDiv.className = 'flex flex-col gap-1 sm:gap-1.5 h-full min-h-0';
+
+                    const header = document.createElement('div');
+                    header.className = `shrink-0 font-number font-black text-center py-1 rounded-md bg-gradient-to-b ${col.headerBg} text-sm sm:text-base shadow-sm`;
+                    header.textContent = col.letter;
+                    colDiv.appendChild(header);
+
+                    const numbersGrid = document.createElement('div');
+                    numbersGrid.className = 'grid grid-cols-2 grid-rows-8 gap-1 sm:gap-1.5 flex-1 min-h-0';
+
+                    for (let n = col.start; n <= col.end; n++) {
+                        const cell = document.createElement('div');
+                        cell.id = `board-num-${n}`;
+                        cell.className = 'font-number font-bold flex items-center justify-center rounded-md text-xs sm:text-sm md:text-base bg-slate-800/50 text-slate-500 border border-white/5 transition-all duration-300 leading-none';
+                        cell.textContent = n;
+                        numbersGrid.appendChild(cell);
+                    }
+
+                    colDiv.appendChild(numbersGrid);
+                    bingoBoardEl.appendChild(colDiv);
+                });
+            }
+
+            // --- 2重円ルーレットホイール描画 ---
+            function drawDoubleWheel(oAngle, iAngle, lockedTens = null, lockedOnes = null) {
+                const container = wheelCanvas.parentElement;
+                if (!container) return;
+                const parentBox = container.parentElement;
+                const availW = parentBox ? parentBox.clientWidth : container.clientWidth;
+                const availH = parentBox ? parentBox.clientHeight : container.clientHeight;
+                const targetBoxSize = Math.max(200, Math.min(availW, availH) - 8);
+                container.style.width = `${targetBoxSize}px`;
+                container.style.height = `${targetBoxSize}px`;
+
+                const size = Math.max(180, targetBoxSize - 12);
+                const dpr = window.devicePixelRatio || 1;
+                if (wheelCanvas.width !== size * dpr) {
+                    wheelCanvas.width = size * dpr;
+                    wheelCanvas.height = size * dpr;
+                    wheelCanvas.style.width = `${size}px`;
+                    wheelCanvas.style.height = `${size}px`;
+                }
+
+                const ctx = wheelCtx;
+                ctx.save();
+                ctx.scale(dpr, dpr);
+                ctx.clearRect(0, 0, size, size);
+
+                const cx = size / 2;
+                const cy = size / 2;
+                const outerR = size * 0.49;
+                const midR = size * 0.32;
+                const innerR = size * 0.16;
+
+                // 1. 外周リング（10の位：0〜7 の8セグメント）
+                const tensCount = 8;
+                const tensStep = (Math.PI * 2) / tensCount;
+                for (let i = 0; i < tensCount; i++) {
+                    const startA = oAngle + i * tensStep - Math.PI / 2 - tensStep / 2;
+                    const endA = startA + tensStep;
+                    const isSelected = lockedTens === i;
+
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, outerR, startA, endA);
+                    ctx.arc(cx, cy, midR, endA, startA, true);
+                    ctx.closePath();
+
+                    if (isSelected) {
+                        ctx.fillStyle = '#0284c7';
+                    } else {
+                        ctx.fillStyle = i % 2 === 0 ? '#1e293b' : '#0f172a';
+                    }
+                    ctx.fill();
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+                    ctx.stroke();
+
+                    // 数字描画
+                    const textAngle = startA + tensStep / 2;
+                    const textR = (outerR + midR) / 2;
+                    ctx.save();
+                    ctx.translate(cx + Math.cos(textAngle) * textR, cy + Math.sin(textAngle) * textR);
+                    ctx.rotate(textAngle + Math.PI / 2);
+                    ctx.font = `900 ${Math.round(size * 0.085)}px Montserrat, sans-serif`;
+                    ctx.fillStyle = isSelected ? '#ffffff' : '#7dd3fc';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(String(i), 0, 0);
+                    ctx.restore();
+                }
+
+                // 2. 内周リング（1の位：0〜9 の10セグメント）
+                const onesCount = 10;
+                const onesStep = (Math.PI * 2) / onesCount;
+                for (let i = 0; i < onesCount; i++) {
+                    const startA = iAngle + i * onesStep - Math.PI / 2 - onesStep / 2;
+                    const endA = startA + onesStep;
+                    const isSelected = lockedOnes === i;
+
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, midR - 1.5, startA, endA);
+                    ctx.arc(cx, cy, innerR, endA, startA, true);
+                    ctx.closePath();
+
+                    if (isSelected) {
+                        ctx.fillStyle = '#d97706';
+                    } else {
+                        ctx.fillStyle = i % 2 === 0 ? '#27201c' : '#181412';
+                    }
+                    ctx.fill();
+                    ctx.lineWidth = 1.2;
+                    ctx.strokeStyle = 'rgba(251, 191, 36, 0.35)';
+                    ctx.stroke();
+
+                    // 数字描画
+                    const textAngle = startA + onesStep / 2;
+                    const textR = (midR + innerR) / 2;
+                    ctx.save();
+                    ctx.translate(cx + Math.cos(textAngle) * textR, cy + Math.sin(textAngle) * textR);
+                    ctx.rotate(textAngle + Math.PI / 2);
+                    ctx.font = `900 ${Math.round(size * 0.07)}px Montserrat, sans-serif`;
+                    ctx.fillStyle = isSelected ? '#ffffff' : '#fcd34d';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(String(i), 0, 0);
+                    ctx.restore();
+                }
+
+                // リング境界線
+                ctx.beginPath();
+                ctx.arc(cx, cy, midR, 0, Math.PI * 2);
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                ctx.stroke();
+
+                ctx.restore();
+            }
+
+            // --- UI更新関数群 ---
+            function updateStats() {
+                drawnCountEl.textContent = drawnHistory.length;
+                remainingCountEl.textContent = availableNumbers.length;
+            }
+
+            function updateRecentHistory() {
+                if (drawnHistory.length === 0) {
+                    recentHistoryEl.innerHTML = '<span class="text-xs text-slate-500">まだ抽選されていません</span>';
+                    return;
+                }
+                const recent = drawnHistory.slice(-5).reverse();
+                recentHistoryEl.innerHTML = recent.map((num, idx) => {
+                    const info = getBingoColumnInfo(num);
+                    const isLatest = idx === 0;
+                    return `
+                        <div class="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-full ${isLatest ? info.bg + ' text-white ring-2 ring-white shadow-md' : 'bg-slate-800 text-slate-200 border border-white/15'} flex flex-col items-center justify-center transition-all">
+                            <span class="font-number font-bold text-[8px] sm:text-[9px] leading-none opacity-85">${info.letter}</span>
+                            <span class="font-number font-black text-xs sm:text-sm leading-tight">${num}</span>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function highlightBoardNumber(num) {
+                const cell = document.getElementById(`board-num-${num}`);
+                if (!cell) return;
+                const info = getBingoColumnInfo(num);
+                cell.className = `font-number font-black flex items-center justify-center rounded-md text-xs sm:text-sm md:text-base ${info.bg} text-white border ${info.border} shadow-md scale-[1.03] transition-all duration-300 leading-none`;
+            }
+
+            function updateButtonState(state) {
+                if (state === 'FINISHED') {
+                    spinBtn.disabled = true;
+                    spinBtn.textContent = '全番号抽選完了';
+                    spinBtn.className = 'w-full md:w-auto px-5 py-1.5 rounded-lg font-black text-sm sm:text-base tracking-wider bg-slate-800 text-slate-500 border border-white/10 cursor-not-allowed';
+                } else {
+                    spinBtn.disabled = false;
+                    spinBtn.textContent = '抽選開始！';
+                    spinBtn.className = 'w-full md:w-auto px-5 py-1.5 rounded-lg font-black text-sm sm:text-base tracking-wider shadow-md transition-all transform active:scale-95 bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-slate-950 border-b-2 border-orange-700';
+                }
+            }
+
+            // --- 画面遷移管理 ---
+            function showHistoryScreen() {
+                rouletteScreenEl.classList.add('hidden');
+                historyScreenEl.classList.remove('hidden');
+                ballDisplayEl.classList.remove('animate-pop-win');
+                returnNoticeEl.classList.add('opacity-0');
+                updateButtonState(availableNumbers.length === 0 ? 'FINISHED' : 'READY');
+            }
+
+            function showRouletteScreen() {
+                historyScreenEl.classList.add('hidden');
+                rouletteScreenEl.classList.remove('hidden');
+                rouletteStatusBadgeEl.textContent = '10の位 抽選中...';
+                rouletteStatusBadgeEl.className = 'px-3.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 font-bold text-xs tracking-widest mb-1 animate-pulse';
+                returnNoticeEl.classList.add('opacity-0');
+                bingoLetterEl.textContent = '?';
+                bingoLetterEl.className = 'font-number font-black text-xs sm:text-sm tracking-widest text-amber-400 leading-none';
+                mainNumberEl.textContent = '--';
+            }
+
+            // --- 抽選アニメーション制御（10の位停止 -> 3秒回転 -> 1の位確定 -> 3秒後一覧へ戻る） ---
+            function startRoulette() {
+                if (isSpinning || availableNumbers.length === 0) return;
+
+                initAudio();
+                isSpinning = true;
+                showRouletteScreen();
+
+                // 当選番号を事前決定（残り番号から均等確率で選出）
+                const winIndex = Math.floor(Math.random() * availableNumbers.length);
+                const winningNumber = availableNumbers[winIndex];
+                const targetTens = Math.floor(winningNumber / 10); // 0〜7
+                const targetOnes = winningNumber % 10;             // 0〜9
+
+                // 目標停止角度（針は真上 -Math.PI/2 にあるため、-i * step で該当数字が真上に来る）
+                const tensStep = (Math.PI * 2) / 8;
+                const onesStep = (Math.PI * 2) / 10;
+
+                const startOuter = outerAngle % (Math.PI * 2);
+                const startInner = innerAngle % (Math.PI * 2);
+
+                // 外周（10の位）：1.8秒で停止（4周＋目標位置）
+                const targetOuterBase = -targetTens * tensStep;
+                const finalOuter = targetOuterBase + Math.PI * 2 * 5;
+
+                // 内周（1の位）：4.8秒で停止（10の位停止後さらに3.0秒回転：11周＋目標位置）
+                const targetInnerBase = -targetOnes * onesStep;
+                const finalInner = targetInnerBase + Math.PI * 2 * 12;
+
+                const TENS_DURATION = 1800;
+                const TOTAL_DURATION = 4800;
+                const startTime = performance.now();
+
+                let tensLocked = false;
+                let lastTickSector = -1;
+
+                function easeOutCubic(t) {
+                    return 1 - Math.pow(1 - t, 3);
+                }
+
+                function animateWheel(now) {
+                    const elapsed = now - startTime;
+
+                    // 外周（10の位）の進行度
+                    const tOuter = Math.min(1, elapsed / TENS_DURATION);
+                    const easedOuter = easeOutCubic(tOuter);
+                    outerAngle = startOuter + (finalOuter - startOuter) * easedOuter;
+
+                    // 内周（1の位）の進行度
+                    const tInner = Math.min(1, elapsed / TOTAL_DURATION);
+                    const easedInner = easeOutCubic(tInner);
+                    innerAngle = startInner + (finalInner - startInner) * easedInner;
+
+                    // 10の位確定タイミング
+                    if (tOuter >= 1 && !tensLocked) {
+                        tensLocked = true;
+                        playLockSound();
+                        rouletteStatusBadgeEl.textContent = '1の位 抽選中...';
+                        mainNumberEl.textContent = `${targetTens}?`;
+                    }
+
+                    // 回転ティック音
+                    const currentSector = Math.floor((innerAngle / onesStep));
+                    if (currentSector !== lastTickSector && tInner < 1) {
+                        lastTickSector = currentSector;
+                        playTickSound(tensLocked ? 'E5' : 'C5');
+                    }
+
+                    drawDoubleWheel(
+                        outerAngle,
+                        innerAngle,
+                        tensLocked ? targetTens : null,
+                        tInner >= 1 ? targetOnes : null
+                    );
+
+                    if (elapsed < TOTAL_DURATION) {
+                        spinAnimFrame = requestAnimationFrame(animateWheel);
+                    } else {
+                        finalizeNumber(winningNumber, winIndex);
+                    }
+                }
+
+                spinAnimFrame = requestAnimationFrame(animateWheel);
+            }
+
+            // 当選番号確定処理（3秒間表示して一覧へ戻る）
+            function finalizeNumber(winningNumber, winIndex) {
+                availableNumbers.splice(winIndex, 1);
+                drawnHistory.push(winningNumber);
+
+                const colInfo = getBingoColumnInfo(winningNumber);
+                bingoLetterEl.textContent = colInfo.letter;
+                bingoLetterEl.className = `font-number font-black text-xs sm:text-sm tracking-widest ${colInfo.color} leading-none`;
+                mainNumberEl.textContent = winningNumber;
+
+                rouletteStatusBadgeEl.textContent = '🎉 番号確定！ 🎉';
+                rouletteStatusBadgeEl.className = 'px-4 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/50 text-emerald-300 font-black text-xs tracking-widest mb-1';
+                returnNoticeEl.classList.remove('opacity-0');
+
+                ballDisplayEl.classList.remove('animate-pop-win');
+                void ballDisplayEl.offsetWidth;
+                ballDisplayEl.classList.add('animate-pop-win');
+
+                playWinSound();
+                launchConfetti();
+
+                // 一覧ボード＆統計データを更新
+                updateStats();
+                updateRecentHistory();
+                highlightBoardNumber(winningNumber);
+
+                // 3秒後に履歴一覧画面へ自動遷移
+                returnTimeout = setTimeout(() => {
+                    isSpinning = false;
+                    showHistoryScreen();
+                }, 3000);
+            }
+
+            // --- ゲーム初期化・リセット ---
+            function initGame() {
+                if (spinAnimFrame) cancelAnimationFrame(spinAnimFrame);
+                if (returnTimeout) clearTimeout(returnTimeout);
+                isSpinning = false;
+                availableNumbers = Array.from({ length: MAX_NUMBER }, (_, i) => i + 1);
+                drawnHistory = [];
+                outerAngle = 0;
+                innerAngle = 0;
+
+                buildBoard();
+                updateStats();
+                updateRecentHistory();
+                showHistoryScreen();
+            }
+
+            // --- 紙吹雪演出 ---
+            const confettiCanvas = document.getElementById('confetti-canvas');
+            const confettiCtx = confettiCanvas.getContext('2d');
+            let particles = [];
+            let confettiAnimId = null;
+
+            function resizeConfettiCanvas() {
+                confettiCanvas.width = window.innerWidth;
+                confettiCanvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', () => {
+                resizeConfettiCanvas();
+                if (!rouletteScreenEl.classList.contains('hidden')) {
+                    drawDoubleWheel(outerAngle, innerAngle);
+                }
+            });
+            resizeConfettiCanvas();
+
+            function launchConfetti() {
+                const colors = ['#fbbf24', '#38bdf8', '#f43f5e', '#34d399', '#a855f7', '#ffffff'];
+                particles = [];
+                for (let i = 0; i < 80; i++) {
+                    particles.push({
+                        x: confettiCanvas.width / 2,
+                        y: confettiCanvas.height / 2,
+                        vx: (Math.random() - 0.5) * 16,
+                        vy: (Math.random() - 0.7) * 16 - 4,
+                        size: Math.random() * 8 + 4,
+                        color: colors[Math.floor(Math.random() * colors.length)],
+                        rotation: Math.random() * 360,
+                        vRot: (Math.random() - 0.5) * 12,
+                        alpha: 1
+                    });
+                }
+                if (confettiAnimId) cancelAnimationFrame(confettiAnimId);
+                animateConfetti();
+            }
+
+            function animateConfetti() {
+                confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+                let alive = false;
+
+                particles.forEach(p => {
+                    if (p.alpha <= 0) return;
+                    alive = true;
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.vy += 0.35; // 重力
+                    p.vx *= 0.98;
+                    p.rotation += p.vRot;
+                    p.alpha -= 0.014;
+
+                    confettiCtx.save();
+                    confettiCtx.translate(p.x, p.y);
+                    confettiCtx.rotate((p.rotation * Math.PI) / 180);
+                    confettiCtx.globalAlpha = Math.max(0, p.alpha);
+                    confettiCtx.fillStyle = p.color;
+                    confettiCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+                    confettiCtx.restore();
+                });
+
+                if (alive) {
+                    confettiAnimId = requestAnimationFrame(animateConfetti);
+                } else {
+                    confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+                }
+            }
+
+            // --- 全画面切り替え ---
+            function updateFullscreenUI() {
+                const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                if (isFs) {
+                    fullscreenIconEnter.classList.add('hidden');
+                    fullscreenIconExit.classList.remove('hidden');
+                    fullscreenLabelEl.textContent = '解除';
+                } else {
+                    fullscreenIconEnter.classList.remove('hidden');
+                    fullscreenIconExit.classList.add('hidden');
+                    fullscreenLabelEl.textContent = '全画面';
+                }
+            }
+
+            fullscreenToggleBtn.addEventListener('click', () => {
+                const docEl = document.documentElement;
+                const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                try {
+                    if (!isFs) {
+                        const req = docEl.requestFullscreen || docEl.webkitRequestFullscreen;
+                        if (req) {
+                            const promise = req.call(docEl);
+                            if (promise && typeof promise.catch === 'function') {
+                                promise.catch(() => {
+                                    // プレビュー環境やiframeの権限ポリシーで全画面が制限されている場合は無視
+                                });
+                            }
+                        }
+                    } else {
+                        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+                        if (exit) {
+                            const promise = exit.call(document);
+                            if (promise && typeof promise.catch === 'function') {
+                                promise.catch(() => {});
+                            }
+                        }
+                    }
+                } catch (e) {
+                    // 同期エラーも安全に捕捉
+                }
+            });
+
+            document.addEventListener('fullscreenchange', updateFullscreenUI);
+            document.addEventListener('webkitfullscreenchange', updateFullscreenUI);
+
+            // --- 効果音切り替え ---
+            soundToggleBtn.addEventListener('click', () => {
+                initAudio();
+                isSoundEnabled = !isSoundEnabled;
+                soundIconEl.textContent = isSoundEnabled ? '🔊' : '🔇';
+                soundLabelEl.textContent = isSoundEnabled ? '効果音 ON' : '効果音 OFF';
+            });
+
+            // --- リセットモーダル制御 ---
+            resetBtn.addEventListener('click', () => {
+                confirmModal.classList.remove('hidden');
+            });
+
+            cancelResetBtn.addEventListener('click', () => {
+                confirmModal.classList.add('hidden');
+            });
+
+            confirmResetBtn.addEventListener('click', () => {
+                confirmModal.classList.add('hidden');
+                initGame();
+            });
+
+            // --- 抽選スタートイベント ---
+            spinBtn.addEventListener('click', startRoulette);
+
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space' && confirmModal.classList.contains('hidden')) {
+                    e.preventDefault();
+                    if (!isSpinning && availableNumbers.length > 0) {
+                        startRoulette();
+                    }
+                }
+            });
+
+            // 初期起動
+            initGame();
+        });
+    </script>
+</body>
+</html>
